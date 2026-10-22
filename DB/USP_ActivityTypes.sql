@@ -130,105 +130,74 @@ BEGIN
 
 
     --ACTUALIZAR TIPO DE ACTIVIDAD--
-    ELSE IF @w_Accion = 'U'
+  ELSE IF @w_Accion = 'U'
+BEGIN
+    IF ISNULL(@i_activityTypeId, 0) = 0
     BEGIN
-
-        -- Validar ID obligatorio
-        IF ISNULL(@i_activityTypeId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL TIPO DE ACTIVIDAD ES OBLIGATORIO';
-        END
-
-        -- Validar modificador obligatorio
-        ELSE IF ISNULL(@i_activityTypeModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        -- Verificar existencia del registro
-        ELSE IF NOT EXISTS
-        (
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL TIPO DE ACTIVIDAD ES OBLIGATORIO';
+    END;
+    ELSE IF ISNULL(@i_activityTypeModificatorId, 0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
+    END;
+    ELSE IF NOT EXISTS (
+        SELECT 1
+        FROM [SQM_CATALOGS].[TBL_ActivityTypes] (NOLOCK)
+        WHERE activityTypeId = @i_activityTypeId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL TIPO DE ACTIVIDAD NO EXISTE';
+    END;
+    ELSE IF @i_activityTypeName IS NOT NULL
+        AND EXISTS (
             SELECT 1
             FROM [SQM_CATALOGS].[TBL_ActivityTypes] (NOLOCK)
-            WHERE activityTypeId = @i_activityTypeId
+            WHERE LOWER(activityTypeName) = LOWER(@i_activityTypeName)
+              AND activityTypeId <> @i_activityTypeId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL TIPO DE ACTIVIDAD NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO TIPO DE ACTIVIDAD REGISTRADO CON ESE NOMBRE';
+    END;
+    ELSE
+    BEGIN
+        BEGIN TRANSACTION TRX_UPD_ACTIVITY_TYPE;
 
-        -- Verificar que el usuario modificador exista
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_activityTypeModificatorId
-                AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+        BEGIN TRY
 
-        -- Validar duplicados
-        ELSE IF @i_activityTypeName IS NOT NULL
-            AND EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_ActivityTypes] (NOLOCK)
-                WHERE activityTypeName = @i_activityTypeName
-                  AND activityTypeId <> @i_activityTypeId
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL TIPO DE ACTIVIDAD YA EXISTE';
-        END
+            UPDATE [SQM_CATALOGS].[TBL_ActivityTypes]
+            SET activityTypeName = COALESCE(@i_activityTypeName, activityTypeName),
+                activityTypeModificationDate = @i_activityTypeModificationDate,
+                activityTypeModificatorId = @i_activityTypeModificatorId,
+                activityTypeEnable = COALESCE(@i_activityTypeEnable, activityTypeEnable)
+            WHERE activityTypeId = @i_activityTypeId;
 
-        ELSE
-        BEGIN
+            COMMIT TRANSACTION TRX_UPD_ACTIVITY_TYPE;
 
-            BEGIN TRANSACTION TRX_UPD_ACTIVITY_TYPE;
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'TIPO DE ACTIVIDAD ACTUALIZADO CORRECTAMENTE';
 
-            BEGIN TRY
+        END TRY
+        BEGIN CATCH
 
-                UPDATE [SQM_CATALOGS].[TBL_ActivityTypes]
-                SET
-                    activityTypeName = COALESCE(@i_activityTypeName, activityTypeName),
-                    activityTypeModificationDate = @i_activityTypeModificationDate,
-                    activityTypeModificatorId = @i_activityTypeModificatorId,
-                    activityTypeEnable = COALESCE(@i_activityTypeEnable, activityTypeEnable)
-                WHERE activityTypeId = @i_activityTypeId;
+            ROLLBACK TRANSACTION TRX_UPD_ACTIVITY_TYPE;
 
-                COMMIT TRANSACTION TRX_UPD_ACTIVITY_TYPE;
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL TIPO DE ACTIVIDAD';
+            SET @o_MensajeTecnico = CONCAT_WS(
+                ' - ',
+                'ERROR AL ACTUALIZAR EL TIPO DE ACTIVIDAD',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'TIPO DE ACTIVIDAD ACTUALIZADO CORRECTAMENTE';
-
-            END TRY
-
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_ACTIVITY_TYPE;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL TIPO DE ACTIVIDAD';
-
-                SET @o_MensajeTecnico = CONCAT_WS
-                (
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL TIPO DE ACTIVIDAD',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
-
+        END CATCH
     END
+END     
 
 
 

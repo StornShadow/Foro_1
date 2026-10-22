@@ -151,66 +151,96 @@ BEGIN
     END
 
     ELSE IF @w_Accion = 'U'
+BEGIN
+
+    IF ISNULL(@i_taskId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DE LA TAREA ES OBLIGATORIO';
+    END
+
+    ELSE IF ISNULL(@i_taskModificatorId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
+    END
+
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM SQM_GENERAL.TBL_Tasks (NOLOCK)
+        WHERE taskId = @i_taskId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'LA TAREA NO EXISTE';
+    END
+
+    ELSE IF @i_taskSummary IS NOT NULL
+        AND EXISTS
+        (
+            SELECT 1
+            FROM SQM_GENERAL.TBL_Tasks (NOLOCK)
+            WHERE LOWER(taskSummary) = LOWER(@i_taskSummary)
+              AND taskId <> @i_taskId
+        )
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRA TAREA REGISTRADA CON ESE NOMBRE';
+    END
+
+    ELSE
     BEGIN
 
-        IF NOT EXISTS(
-            SELECT 1
-            FROM SQM_GENERAL.TBL_Tasks
-            WHERE taskId = @i_taskId
-        )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'LA TAREA NO EXISTE';
-        END
+        BEGIN TRANSACTION TRX_UPD_TASK;
 
-        ELSE
-        BEGIN
+        BEGIN TRY
 
-            BEGIN TRANSACTION TRX_UPD_TASK;
+            UPDATE SQM_GENERAL.TBL_Tasks
+            SET
+                taskSummary = COALESCE(@i_taskSummary, taskSummary),
+                taskDescription = COALESCE(@i_taskDescription, taskDescription),
+                taskOwner = COALESCE(@i_taskOwner, taskOwner),
+                taskOriginalEstimate = COALESCE(@i_taskOriginalEstimate, taskOriginalEstimate),
+                taskCompletedWork = COALESCE(@i_taskCompletedWork, taskCompletedWork),
+                taskRemaningWork = COALESCE(@i_taskRemaningWork, taskRemaningWork),
+                taskStartDate = COALESCE(@i_taskStartDate, taskStartDate),
+                taskCompletedDate = COALESCE(@i_taskCompletedDate, taskCompletedDate),
+                taskDueDate = COALESCE(@i_taskDueDate, taskDueDate),
+                taskActivityType = COALESCE(@i_taskActivityType, taskActivityType),
+                taskModificationDate = @i_taskModificationDate,
+                taskModificatorId = @i_taskModificatorId,
+                taskStatus = COALESCE(@i_taskStatus, taskStatus)
+            WHERE taskId = @i_taskId;
 
-            BEGIN TRY
+            COMMIT TRANSACTION TRX_UPD_TASK;
 
-                UPDATE SQM_GENERAL.TBL_Tasks
-                SET
-                    taskSummary = COALESCE(@i_taskSummary,taskSummary),
-                    taskDescription = COALESCE(@i_taskDescription,taskDescription),
-                    taskOwner = COALESCE(@i_taskOwner,taskOwner),
-                    taskOriginalEstimate = COALESCE(@i_taskOriginalEstimate,taskOriginalEstimate),
-                    taskCompletedWork = COALESCE(@i_taskCompletedWork,taskCompletedWork),
-                    taskRemaningWork = COALESCE(@i_taskRemaningWork,taskRemaningWork),
-                    taskStartDate = COALESCE(@i_taskStartDate,taskStartDate),
-                    taskCompletedDate = COALESCE(@i_taskCompletedDate,taskCompletedDate),
-                    taskDueDate = COALESCE(@i_taskDueDate,taskDueDate),
-                    taskActivityType = COALESCE(@i_taskActivityType,taskActivityType),
-                    taskModificationDate = @i_taskModificationDate,
-                    taskModificatorId = @i_taskModificatorId,
-                    taskStatus = COALESCE(@i_taskStatus,taskStatus)
-                WHERE taskId = @i_taskId;
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'TAREA ACTUALIZADA CORRECTAMENTE';
 
-                COMMIT TRANSACTION TRX_UPD_TASK;
+        END TRY
 
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'TAREA ACTUALIZADA CORRECTAMENTE';
+        BEGIN CATCH
 
-            END TRY
-            BEGIN CATCH
+            ROLLBACK TRANSACTION TRX_UPD_TASK;
 
-                ROLLBACK TRANSACTION TRX_UPD_TASK;
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR TAREA';
 
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR TAREA';
-                SET @o_MensajeTecnico =
-                    CONCAT_WS(' - ',
-                    'ERROR AL ACTUALIZAR TAREA',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE());
+            SET @o_MensajeTecnico = CONCAT_WS
+            (
+                ' - ',
+                'ERROR AL ACTUALIZAR TAREA',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-            END CATCH
-
-        END
+        END CATCH
 
     END
+
+END
 
     ELSE IF @w_Accion = 'S'
     BEGIN

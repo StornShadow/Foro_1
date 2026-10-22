@@ -233,151 +233,97 @@ BEGIN
 
 
     --ACTUALIZAR EPIC--
-    ELSE IF @w_Accion = 'U'
+ ELSE IF @w_Accion = 'U'
+BEGIN
+
+    IF ISNULL(@i_epicId, 0) = 0
     BEGIN
-
-        IF ISNULL(@i_epicId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL EPIC ES OBLIGATORIO';
-        END
-
-        ELSE IF ISNULL(@i_epicModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        ELSE IF NOT EXISTS
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL EPIC ES OBLIGATORIO';
+    END;
+    ELSE IF ISNULL(@i_epicModificatorId, 0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
+    END;
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_GENERAL].[TBL_Epics] (NOLOCK)
+        WHERE epicId = @i_epicId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL EPIC NO EXISTE';
+    END;
+    ELSE IF @i_epicName IS NOT NULL
+        AND EXISTS
         (
             SELECT 1
             FROM [SQM_GENERAL].[TBL_Epics] (NOLOCK)
-            WHERE epicId = @i_epicId
+            WHERE LOWER(epicName) = LOWER(@i_epicName)
+              AND epicId <> @i_epicId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL EPIC NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO EPIC REGISTRADO CON ESE NOMBRE';
+    END;
+    ELSE IF @i_epicStartDate IS NOT NULL
+        AND @i_epicDueDate IS NOT NULL
+        AND @i_epicStartDate > @i_epicDueDate
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
+    END;
+    ELSE
+    BEGIN
 
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_epicModificatorId
-                AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+        BEGIN TRANSACTION TRX_UPD_EPIC;
 
-        ELSE IF @i_epicParentLink IS NOT NULL
-            AND NOT EXISTS
+        BEGIN TRY
+
+            UPDATE [SQM_GENERAL].[TBL_Epics]
+            SET
+                epicName = COALESCE(@i_epicName, epicName),
+                epicSummary = COALESCE(@i_epicSummary, epicSummary),
+                epicDescription = COALESCE(@i_epicDescription, epicDescription),
+                epicParentLink = COALESCE(@i_epicParentLink, epicParentLink),
+                epicOwner = COALESCE(@i_epicOwner, epicOwner),
+                epicStartDate = COALESCE(@i_epicStartDate, epicStartDate),
+                epicDueDate = COALESCE(@i_epicDueDate, epicDueDate),
+                epicPriority = COALESCE(@i_epicPriority, epicPriority),
+                epicModificationDate = @i_epicModificationDate,
+                epicModificatorId = @i_epicModificatorId,
+                epicStatus = COALESCE(@i_epicStatus, epicStatus)
+            WHERE epicId = @i_epicId;
+
+            COMMIT TRANSACTION TRX_UPD_EPIC;
+
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'EPIC ACTUALIZADO CORRECTAMENTE';
+
+        END TRY
+        BEGIN CATCH
+
+            ROLLBACK TRANSACTION TRX_UPD_EPIC;
+
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL EPIC';
+
+            SET @o_MensajeTecnico = CONCAT_WS
             (
-                SELECT 1
-                FROM [SQM_GENERAL].[TBL_Initiatives] (NOLOCK)
-                WHERE initiativeId = @i_epicParentLink
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA INITIATIVE PADRE NO EXISTE';
-        END
+                ' - ',
+                'ERROR AL ACTUALIZAR EL EPIC',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-        ELSE IF @i_epicOwner IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-                WHERE userId = @i_epicOwner
-                    AND userEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL OWNER NO EXISTE';
-        END
-
-        ELSE IF @i_epicPriority IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
-                WHERE priorityId = @i_epicPriority
-                    AND priorityEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
-        END
-
-        ELSE IF @i_epicStatus IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-                WHERE statusId = @i_epicStatus
-                    AND statusEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL STATUS NO EXISTE';
-        END
-
-        ELSE IF @i_epicStartDate IS NOT NULL
-            AND @i_epicDueDate IS NOT NULL
-            AND @i_epicStartDate > @i_epicDueDate
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
-        END
-
-        ELSE
-        BEGIN
-
-            BEGIN TRANSACTION TRX_UPD_EPIC;
-
-            BEGIN TRY
-
-                UPDATE [SQM_GENERAL].[TBL_Epics]
-                SET
-                    epicName = COALESCE(@i_epicName, epicName),
-                    epicSummary = COALESCE(@i_epicSummary, epicSummary),
-                    epicDescription = COALESCE(@i_epicDescription, epicDescription),
-                    epicParentLink = COALESCE(@i_epicParentLink, epicParentLink),
-                    epicOwner = COALESCE(@i_epicOwner, epicOwner),
-                    epicStartDate = COALESCE(@i_epicStartDate, epicStartDate),
-                    epicDueDate = COALESCE(@i_epicDueDate, epicDueDate),
-                    epicPriority = COALESCE(@i_epicPriority, epicPriority),
-                    epicModificationDate = @i_epicModificationDate,
-                    epicModificatorId = @i_epicModificatorId,
-                    epicStatus = COALESCE(@i_epicStatus, epicStatus)
-                WHERE epicId = @i_epicId;
-
-                COMMIT TRANSACTION TRX_UPD_EPIC;
-
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'EPIC ACTUALIZADO CORRECTAMENTE';
-
-            END TRY
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_EPIC;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL EPIC';
-
-                SET @o_MensajeTecnico = CONCAT_WS(
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL EPIC',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
+        END CATCH
 
     END
+
+END
 
 
 

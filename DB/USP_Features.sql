@@ -229,152 +229,97 @@ BEGIN
 
 
     --ACTUALIZAR FEATURE--
-    ELSE IF @w_Accion = 'U'
+   ELSE IF @w_Accion = 'U'
+BEGIN
+
+    IF ISNULL(@i_featureId, 0) = 0
     BEGIN
-
-        IF ISNULL(@i_featureId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL FEATURE ES OBLIGATORIO';
-        END
-
-        ELSE IF ISNULL(@i_featureModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        ELSE IF NOT EXISTS
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL FEATURE ES OBLIGATORIO';
+    END;
+    ELSE IF ISNULL(@i_featureModificatorId, 0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
+    END;
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_GENERAL].[TBL_Features] (NOLOCK)
+        WHERE featureId = @i_featureId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL FEATURE NO EXISTE';
+    END;
+    ELSE IF @i_featureSummary IS NOT NULL
+        AND EXISTS
         (
             SELECT 1
             FROM [SQM_GENERAL].[TBL_Features] (NOLOCK)
-            WHERE featureId = @i_featureId
+            WHERE LOWER(featureSummary) = LOWER(@i_featureSummary)
+              AND featureId <> @i_featureId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL FEATURE NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO FEATURE REGISTRADO CON ESE NOMBRE';
+    END;
+    ELSE IF @i_featureStartDate IS NOT NULL
+        AND @i_featureDueDate IS NOT NULL
+        AND @i_featureStartDate > @i_featureDueDate
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
+    END;
+    ELSE
+    BEGIN
 
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_featureModificatorId
-              AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+        BEGIN TRANSACTION TRX_UPD_FEATURE;
 
-        ELSE IF @i_featureParentLink IS NOT NULL
-            AND NOT EXISTS
+        BEGIN TRY
+
+            UPDATE [SQM_GENERAL].[TBL_Features]
+            SET
+                featureSummary = COALESCE(@i_featureSummary, featureSummary),
+                featureDescription = COALESCE(@i_featureDescription, featureDescription),
+                featuresAcceptanceCriteria = COALESCE(@i_featuresAcceptanceCriteria, featuresAcceptanceCriteria),
+                featureParentLink = COALESCE(@i_featureParentLink, featureParentLink),
+                featureOwner = COALESCE(@i_featureOwner, featureOwner),
+                featureStartDate = COALESCE(@i_featureStartDate, featureStartDate),
+                featureDueDate = COALESCE(@i_featureDueDate, featureDueDate),
+                featurePriority = COALESCE(@i_featurePriority, featurePriority),
+                featureModificationDate = @i_featureModificationDate,
+                featureModificatorId = @i_featureModificatorId,
+                featureStatus = COALESCE(@i_featureStatus, featureStatus)
+            WHERE featureId = @i_featureId;
+
+            COMMIT TRANSACTION TRX_UPD_FEATURE;
+
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'FEATURE ACTUALIZADO CORRECTAMENTE';
+
+        END TRY
+        BEGIN CATCH
+
+            ROLLBACK TRANSACTION TRX_UPD_FEATURE;
+
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL FEATURE';
+
+            SET @o_MensajeTecnico = CONCAT_WS
             (
-                SELECT 1
-                FROM [SQM_GENERAL].[TBL_Epics] (NOLOCK)
-                WHERE epicId = @i_featureParentLink
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL EPIC PADRE NO EXISTE';
-        END
+                ' - ',
+                'ERROR AL ACTUALIZAR EL FEATURE',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-        ELSE IF @i_featureOwner IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-                WHERE userId = @i_featureOwner
-                  AND userEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL OWNER NO EXISTE';
-        END
-
-        ELSE IF @i_featurePriority IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
-                WHERE priorityId = @i_featurePriority
-                  AND priorityEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
-        END
-
-        ELSE IF @i_featureStatus IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-                WHERE statusId = @i_featureStatus
-                  AND statusEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL STATUS NO EXISTE';
-        END
-
-        ELSE IF @i_featureStartDate IS NOT NULL
-            AND @i_featureDueDate IS NOT NULL
-            AND @i_featureStartDate > @i_featureDueDate
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
-        END
-
-        ELSE
-        BEGIN
-
-            BEGIN TRANSACTION TRX_UPD_FEATURE;
-
-            BEGIN TRY
-
-                UPDATE [SQM_GENERAL].[TBL_Features]
-                SET
-                    featureSummary = COALESCE(@i_featureSummary, featureSummary),
-                    featureDescription = COALESCE(@i_featureDescription, featureDescription),
-                    featuresAcceptanceCriteria = COALESCE(@i_featuresAcceptanceCriteria, featuresAcceptanceCriteria),
-                    featureParentLink = COALESCE(@i_featureParentLink, featureParentLink),
-                    featureOwner = COALESCE(@i_featureOwner, featureOwner),
-                    featureStartDate = COALESCE(@i_featureStartDate, featureStartDate),
-                    featureDueDate = COALESCE(@i_featureDueDate, featureDueDate),
-                    featurePriority = COALESCE(@i_featurePriority, featurePriority),
-                    featureModificationDate = @i_featureModificationDate,
-                    featureModificatorId = @i_featureModificatorId,
-                    featureStatus = COALESCE(@i_featureStatus, featureStatus)
-                WHERE featureId = @i_featureId;
-
-                COMMIT TRANSACTION TRX_UPD_FEATURE;
-
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'FEATURE ACTUALIZADO CORRECTAMENTE';
-
-            END TRY
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_FEATURE;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL FEATURE';
-
-                SET @o_MensajeTecnico = CONCAT_WS(
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL FEATURE',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
+        END CATCH
 
     END
 
+END
 
 
 

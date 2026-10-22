@@ -130,104 +130,104 @@ BEGIN
 
 
     --ACTUALIZAR PRIORIDAD--
-    ELSE IF @w_Accion = 'U'
+  ELSE IF @w_Accion = 'U'
+BEGIN
+
+    -- Validar ID obligatorio
+    IF ISNULL(@i_priorityId,0) = 0
     BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DE LA PRIORIDAD ES OBLIGATORIO';
+    END
 
-        -- Validar ID obligatorio
-        IF ISNULL(@i_priorityId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DE LA PRIORIDAD ES OBLIGATORIO';
-        END
+    -- Validar modificador obligatorio
+    ELSE IF ISNULL(@i_priorityModificatorId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
+    END
 
-        -- Validar modificador obligatorio
-        ELSE IF ISNULL(@i_priorityModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-        END
+    -- Verificar que exista la prioridad
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
+        WHERE priorityId = @i_priorityId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
+    END
 
-        -- Verificar que exista la prioridad
-        ELSE IF NOT EXISTS
+    -- Verificar existencia del modificador
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
+        WHERE userId = @i_priorityModificatorId
+          AND userEnable = 1
+    )
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
+    END
+
+    -- Evitar duplicidad de nombre
+    ELSE IF @i_priorityName IS NOT NULL
+        AND EXISTS
         (
             SELECT 1
             FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
-            WHERE priorityId = @i_priorityId
+            WHERE LOWER(priorityName) = LOWER(@i_priorityName)
+              AND priorityId <> @i_priorityId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRA PRIORIDAD REGISTRADA CON ESE NOMBRE';
+    END
 
-        -- Verificar existencia del modificador
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_priorityModificatorId
-                AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+    ELSE
+    BEGIN
 
-        -- Evitar duplicidad de nombre
-        ELSE IF @i_priorityName IS NOT NULL
-            AND EXISTS
+        BEGIN TRANSACTION TRX_UPD_PRIORITY;
+
+        BEGIN TRY
+
+            UPDATE [SQM_CATALOGS].[TBL_Priorities]
+            SET
+                priorityName = COALESCE(@i_priorityName, priorityName),
+                priorityModificationDate = @i_priorityModificationDate,
+                priorityModificatorId = @i_priorityModificatorId,
+                priorityEnable = COALESCE(@i_priorityEnable, priorityEnable)
+            WHERE priorityId = @i_priorityId;
+
+            COMMIT TRANSACTION TRX_UPD_PRIORITY;
+
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'PRIORIDAD ACTUALIZADA CORRECTAMENTE';
+
+        END TRY
+
+        BEGIN CATCH
+
+            ROLLBACK TRANSACTION TRX_UPD_PRIORITY;
+
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR LA PRIORIDAD';
+
+            SET @o_MensajeTecnico = CONCAT_WS
             (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
-                WHERE priorityName = @i_priorityName
-                    AND priorityId <> @i_priorityId
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA PRIORIDAD YA EXISTE';
-        END
+                ' - ',
+                'ERROR AL ACTUALIZAR LA PRIORIDAD',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-        ELSE
-        BEGIN
-
-            BEGIN TRANSACTION TRX_UPD_PRIORITY;
-
-            BEGIN TRY
-
-                UPDATE [SQM_CATALOGS].[TBL_Priorities]
-                SET
-                    priorityName = COALESCE(@i_priorityName, priorityName),
-                    priorityModificationDate = @i_priorityModificationDate,
-                    priorityModificatorId = @i_priorityModificatorId,
-                    priorityEnable = COALESCE(@i_priorityEnable, priorityEnable)
-                WHERE priorityId = @i_priorityId;
-
-                COMMIT TRANSACTION TRX_UPD_PRIORITY;
-
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'PRIORIDAD ACTUALIZADA CORRECTAMENTE';
-
-            END TRY
-
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_PRIORITY;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR LA PRIORIDAD';
-
-                SET @o_MensajeTecnico = CONCAT_WS(
-                    ' - ',
-                    'ERROR AL ACTUALIZAR LA PRIORIDAD',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
+        END CATCH
 
     END
+
 
 
 

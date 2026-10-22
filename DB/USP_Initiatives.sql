@@ -206,138 +206,96 @@ BEGIN
 
 
     --ACTUALIZAR INITIATIVE--
-    ELSE IF @w_Accion = 'U'
+   ELSE IF @w_Accion = 'U'
+BEGIN
+
+    IF ISNULL(@i_initiativeId, 0) = 0
     BEGIN
-
-        IF ISNULL(@i_initiativeId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DE LA INITIATIVE ES OBLIGATORIO';
-        END
-
-        ELSE IF ISNULL(@i_initiativeModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        ELSE IF NOT EXISTS
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DE LA INITIATIVE ES OBLIGATORIO';
+    END;
+    ELSE IF ISNULL(@i_initiativeModificatorId, 0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
+    END;
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_GENERAL].[TBL_Initiatives] (NOLOCK)
+        WHERE initiativeId = @i_initiativeId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'LA INITIATIVE NO EXISTE';
+    END;
+    ELSE IF @i_initiativeSummary IS NOT NULL
+        AND EXISTS
         (
             SELECT 1
             FROM [SQM_GENERAL].[TBL_Initiatives] (NOLOCK)
-            WHERE initiativeId = @i_initiativeId
+            WHERE LOWER(initiativeSummary) = LOWER(@i_initiativeSummary)
+              AND initiativeId <> @i_initiativeId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'LA INITIATIVE NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRA INITIATIVE REGISTRADA CON ESE NOMBRE';
+    END;
+    ELSE IF @i_initiativeTargetStart IS NOT NULL
+        AND @i_initiativeTargetEnd IS NOT NULL
+        AND @i_initiativeTargetStart > @i_initiativeTargetEnd
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
+    END;
+    ELSE
+    BEGIN
 
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_initiativeModificatorId
-                AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+        BEGIN TRANSACTION TRX_UPD_INITIATIVE;
 
-        ELSE IF @i_initiativeOwner IS NOT NULL
-            AND NOT EXISTS
+        BEGIN TRY
+
+            UPDATE [SQM_GENERAL].[TBL_Initiatives]
+            SET
+                initiativeSummary = COALESCE(@i_initiativeSummary, initiativeSummary),
+                initiativeDescription = COALESCE(@i_initiativeDescription, initiativeDescription),
+                initiativeOwner = COALESCE(@i_initiativeOwner, initiativeOwner),
+                initiativeGoals = COALESCE(@i_initiativeGoals, initiativeGoals),
+                initiativeBusinessValue = COALESCE(@i_initiativeBusinessValue, initiativeBusinessValue),
+                initiativeTargetStart = COALESCE(@i_initiativeTargetStart, initiativeTargetStart),
+                initiativeTargetEnd = COALESCE(@i_initiativeTargetEnd, initiativeTargetEnd),
+                initiativeModificationDate = @i_initiativeModificationDate,
+                initiativeModificatorId = @i_initiativeModificatorId,
+                initiativeStatus = COALESCE(@i_initiativeStatus, initiativeStatus)
+            WHERE initiativeId = @i_initiativeId;
+
+            COMMIT TRANSACTION TRX_UPD_INITIATIVE;
+
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'INITIATIVE ACTUALIZADA CORRECTAMENTE';
+
+        END TRY
+        BEGIN CATCH
+
+            ROLLBACK TRANSACTION TRX_UPD_INITIATIVE;
+
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR LA INITIATIVE';
+
+            SET @o_MensajeTecnico = CONCAT_WS
             (
-                SELECT 1
-                FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-                WHERE userId = @i_initiativeOwner
-                    AND userEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL OWNER NO EXISTE';
-        END
+                ' - ',
+                'ERROR AL ACTUALIZAR LA INITIATIVE',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-        ELSE IF @i_initiativeBusinessValue IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
-                WHERE businessValueId = @i_initiativeBusinessValue
-                    AND businessValueEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL BUSINESS VALUE NO EXISTE';
-        END
-
-        ELSE IF @i_initiativeStatus IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-                WHERE statusId = @i_initiativeStatus
-                    AND statusEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL STATUS NO EXISTE';
-        END
-
-        ELSE IF @i_initiativeTargetStart IS NOT NULL
-            AND @i_initiativeTargetEnd IS NOT NULL
-            AND @i_initiativeTargetStart > @i_initiativeTargetEnd
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
-        END
-
-        ELSE
-        BEGIN
-
-            BEGIN TRANSACTION TRX_UPD_INITIATIVE;
-
-            BEGIN TRY
-
-                UPDATE [SQM_GENERAL].[TBL_Initiatives]
-                SET
-                    initiativeSummary = COALESCE(@i_initiativeSummary, initiativeSummary),
-                    initiativeDescription = COALESCE(@i_initiativeDescription, initiativeDescription),
-                    initiativeOwner = COALESCE(@i_initiativeOwner, initiativeOwner),
-                    initiativeGoals = COALESCE(@i_initiativeGoals, initiativeGoals),
-                    initiativeBusinessValue = COALESCE(@i_initiativeBusinessValue, initiativeBusinessValue),
-                    initiativeTargetStart = COALESCE(@i_initiativeTargetStart, initiativeTargetStart),
-                    initiativeTargetEnd = COALESCE(@i_initiativeTargetEnd, initiativeTargetEnd),
-                    initiativeModificationDate = @i_initiativeModificationDate,
-                    initiativeModificatorId = @i_initiativeModificatorId,
-                    initiativeStatus = COALESCE(@i_initiativeStatus, initiativeStatus)
-                WHERE initiativeId = @i_initiativeId;
-
-                COMMIT TRANSACTION TRX_UPD_INITIATIVE;
-
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'INITIATIVE ACTUALIZADA CORRECTAMENTE';
-
-            END TRY
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_INITIATIVE;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR LA INITIATIVE';
-
-                SET @o_MensajeTecnico = CONCAT_WS(
-                    ' - ',
-                    'ERROR AL ACTUALIZAR LA INITIATIVE',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
+        END CATCH
 
     END
+
+END
 
 
 

@@ -234,222 +234,174 @@ BEGIN
         END
 
     --ACTUALIZAR PRODUCT BACKLOG ITEM--
-        ELSE IF @w_Accion = 'U'
-        BEGIN
+  ELSE IF @w_Accion = 'U'
+BEGIN
 
-        -- Validar ID obligatorio
-        IF ISNULL(@i_PBIId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL PBI ES OBLIGATORIO';
-        END
+    -- Validar ID obligatorio
+    IF ISNULL(@i_PBIId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL PBI ES OBLIGATORIO';
+    END
 
-        -- Validar modificador obligatorio
-        ELSE IF ISNULL(@i_PBIModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
-        END
+    -- Validar modificador obligatorio
+    ELSE IF ISNULL(@i_PBIModificatorId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR ES OBLIGATORIO';
+    END
 
-        -- Validar existencia del PBI
-        ELSE IF NOT EXISTS
+    -- Validar existencia del PBI
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_GENERAL].[TBL_ProductBacklogItems] (NOLOCK)
+        WHERE PBIId = @i_PBIId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL PBI NO EXISTE';
+    END
+
+    -- Validar usuario modificador
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
+        WHERE userId = @i_PBIModificatorId
+          AND userEnable = 1
+    )
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
+    END
+
+    -- Validar Feature Padre
+    ELSE IF @i_PBIParentLink IS NOT NULL
+        AND NOT EXISTS
         (
             SELECT 1
-            FROM [SQM_GENERAL].[TBL_ProductBacklogItems] (NOLOCK)
-            WHERE PBIId = @i_PBIId
+            FROM [SQM_GENERAL].[TBL_Features] (NOLOCK)
+            WHERE featureId = @i_PBIParentLink
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL PBI NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL FEATURE PADRE NO EXISTE';
+    END
 
-        -- Validar usuario modificador
-        ELSE IF NOT EXISTS
+    -- Validar Owner
+    ELSE IF @i_PBIOwner IS NOT NULL
+        AND NOT EXISTS
         (
             SELECT 1
             FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_PBIModificatorId
-            AND userEnable = 1
+            WHERE userId = @i_PBIOwner
+              AND userEnable = 1
         )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
-
-        -- Validar Feature Padre
-        ELSE IF @i_PBIParentLink IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_GENERAL].[TBL_Features] (NOLOCK)
-                WHERE featureId = @i_PBIParentLink
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL FEATURE PADRE NO EXISTE';
-        END
-
-        -- Validar Owner
-        ELSE IF @i_PBIOwner IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-                WHERE userId = @i_PBIOwner
-                    AND userEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL OWNER NO EXISTE';
-        END
-
-        -- Validar Prioridad
-        ELSE IF @i_PBIPriority IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
-                WHERE priorityId = @i_PBIPriority
-                    AND priorityEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
-        END
-
-        -- Validar Status
-        ELSE IF @i_PBIStatus IS NOT NULL
-            AND NOT EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-                WHERE statusId = @i_PBIStatus
-                    AND statusEnable = 1
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL STATUS NO EXISTE';
-        END
-
-        -- Validar Story Points
-        ELSE IF @i_PBIStoryPoint IS NOT NULL
-            AND @i_PBIStoryPoint < 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LOS STORY POINTS NO PUEDEN SER NEGATIVOS';
-        END
-
-        -- Validar fechas
-        ELSE IF @i_PBIStartDate IS NOT NULL
-            AND @i_PBIDueDate IS NOT NULL
-            AND @i_PBIStartDate > @i_PBIDueDate
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
-        END
-
-        ELSE
-        BEGIN
-
-            BEGIN TRANSACTION TRX_UPD_PBI;
-
-            BEGIN TRY
-
-                UPDATE [SQM_GENERAL].[TBL_ProductBacklogItems]
-                SET
-                    PBISummary = COALESCE(@i_PBISummary, PBISummary),
-                    PBIDescription = COALESCE(@i_PBIDescription, PBIDescription),
-                    PBIsAcceptanceCriteria = COALESCE(@i_PBIsAcceptanceCriteria, PBIsAcceptanceCriteria),
-                    PBIOwner = COALESCE(@i_PBIOwner, PBIOwner),
-                    PBIParentLink = COALESCE(@i_PBIParentLink, PBIParentLink),
-                    PBIStoryPoint = COALESCE(@i_PBIStoryPoint, PBIStoryPoint),
-                    PBIStartDate = COALESCE(@i_PBIStartDate, PBIStartDate),
-                    PBIDueDate = COALESCE(@i_PBIDueDate, PBIDueDate),
-                    PBIPriority = COALESCE(@i_PBIPriority, PBIPriority),
-                    PBIModificationDate = @i_PBIModificationDate,
-                    PBIModificatorId = @i_PBIModificatorId,
-                    PBIStatus = COALESCE(@i_PBIStatus, PBIStatus)
-                WHERE PBIId = @i_PBIId;
-
-                COMMIT TRANSACTION TRX_UPD_PBI;
-
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'PBI ACTUALIZADO CORRECTAMENTE';
-
-            END TRY
-
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_PBI;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL PBI';
-
-                SET @o_MensajeTecnico = CONCAT_WS
-                (
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL PBI',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
-
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL OWNER NO EXISTE';
     END
 
-    --LISTAR PBI--
-    ELSE IF @w_Accion = 'S'
+    -- Validar Prioridad
+    ELSE IF @i_PBIPriority IS NOT NULL
+        AND NOT EXISTS
+        (
+            SELECT 1
+            FROM [SQM_CATALOGS].[TBL_Priorities] (NOLOCK)
+            WHERE priorityId = @i_PBIPriority
+              AND priorityEnable = 1
+        )
     BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LA PRIORIDAD NO EXISTE';
+    END
+
+    -- Validar Status
+    ELSE IF @i_PBIStatus IS NOT NULL
+        AND NOT EXISTS
+        (
+            SELECT 1
+            FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
+            WHERE statusId = @i_PBIStatus
+              AND statusEnable = 1
+        )
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL STATUS NO EXISTE';
+    END
+
+    -- Validar duplicidad
+    ELSE IF @i_PBISummary IS NOT NULL
+        AND EXISTS
+        (
+            SELECT 1
+            FROM [SQM_GENERAL].[TBL_ProductBacklogItems] (NOLOCK)
+            WHERE LOWER(PBISummary) = LOWER(@i_PBISummary)
+              AND PBIId <> @i_PBIId
+        )
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO PBI REGISTRADO CON ESE NOMBRE';
+    END
+
+    -- Validar Story Points
+    ELSE IF @i_PBIStoryPoint IS NOT NULL
+        AND @i_PBIStoryPoint < 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LOS STORY POINTS NO PUEDEN SER NEGATIVOS';
+    END
+
+    -- Validar fechas
+    ELSE IF @i_PBIStartDate IS NOT NULL
+        AND @i_PBIDueDate IS NOT NULL
+        AND @i_PBIStartDate > @i_PBIDueDate
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'LA FECHA INICIO NO PUEDE SER MAYOR A LA FECHA FIN';
+    END
+
+    ELSE
+    BEGIN
+
+        BEGIN TRANSACTION TRX_UPD_PBI;
 
         BEGIN TRY
 
-            SELECT
-                PBIId,
-                PBISummary,
-                PBIDescription,
-                PBIsAcceptanceCriteria,
-                PBIOwner,
-                PBIParentLink,
-                PBIStoryPoint,
-                PBIStartDate,
-                PBIDueDate,
-                PBIPriority,
-                PBICreationDate,
-                PBICreatorId,
-                PBIModificationDate,
-                PBIModificatorId,
-                PBIStatus
-            FROM [SQM_GENERAL].[TBL_ProductBacklogItems] (NOLOCK)
-            ORDER BY PBIId
-            OFFSET (@i_PageNumber - 1) * @i_RowsPerPage ROWS
-            FETCH NEXT @i_RowsPerPage ROWS ONLY;
+            UPDATE [SQM_GENERAL].[TBL_ProductBacklogItems]
+            SET
+                PBISummary = COALESCE(@i_PBISummary, PBISummary),
+                PBIDescription = COALESCE(@i_PBIDescription, PBIDescription),
+                PBIsAcceptanceCriteria = COALESCE(@i_PBIsAcceptanceCriteria, PBIsAcceptanceCriteria),
+                PBIOwner = COALESCE(@i_PBIOwner, PBIOwner),
+                PBIParentLink = COALESCE(@i_PBIParentLink, PBIParentLink),
+                PBIStoryPoint = COALESCE(@i_PBIStoryPoint, PBIStoryPoint),
+                PBIStartDate = COALESCE(@i_PBIStartDate, PBIStartDate),
+                PBIDueDate = COALESCE(@i_PBIDueDate, PBIDueDate),
+                PBIPriority = COALESCE(@i_PBIPriority, PBIPriority),
+                PBIModificationDate = @i_PBIModificationDate,
+                PBIModificatorId = @i_PBIModificatorId,
+                PBIStatus = COALESCE(@i_PBIStatus, PBIStatus)
+            WHERE PBIId = @i_PBIId;
 
-            SET @w_totalRows = @@ROWCOUNT;
+            COMMIT TRANSACTION TRX_UPD_PBI;
 
-            IF @w_totalRows > 0
-            BEGIN
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'PBI LISTADOS CORRECTAMENTE';
-            END
-            ELSE
-            BEGIN
-                SET @o_Numero = 204;
-                SET @o_MensajeUsuario = 'NO HAY MAS REGISTROS PARA LISTAR';
-            END
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'PBI ACTUALIZADO CORRECTAMENTE';
 
         END TRY
-
         BEGIN CATCH
 
-            SET @o_Numero = 500;
-            SET @o_MensajeUsuario = 'ERROR AL LISTAR LOS PBI';
+            ROLLBACK TRANSACTION TRX_UPD_PBI;
 
-            SET @o_MensajeTecnico = CONCAT_WS(
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL PBI';
+
+            SET @o_MensajeTecnico = CONCAT_WS
+            (
                 ' - ',
-                'ERROR AL LISTAR LOS PBI',
+                'ERROR AL ACTUALIZAR EL PBI',
                 ERROR_PROCEDURE(),
                 ERROR_LINE(),
                 ERROR_MESSAGE()
@@ -458,6 +410,8 @@ BEGIN
         END CATCH
 
     END
+
+END
 
 
 

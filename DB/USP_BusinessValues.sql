@@ -129,100 +129,71 @@ BEGIN
 
     --ACTUALIZAR BUSINESS VALUE--
     ELSE IF @w_Accion = 'U'
+BEGIN
+    IF ISNULL(@i_businessValueId, 0) = 0
     BEGIN
-
-        -- El ID es obligatorio para actualizar
-        IF ISNULL(@i_businessValueId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL BUSINESS VALUE ES OBLIGATORIO';
-        END
-
-        -- El usuario modificador es obligatorio
-        ELSE IF ISNULL(@i_businessValueModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        -- Verificar que el Business Value exista
-        ELSE IF NOT EXISTS
-        (
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL BUSINESS VALUE ES OBLIGATORIO';
+    END;
+    ELSE IF ISNULL(@i_businessValueModificatorId, 0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
+    END;
+    ELSE IF NOT EXISTS (
+        SELECT 1
+        FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
+        WHERE businessValueId = @i_businessValueId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL BUSINESS VALUE NO EXISTE';
+    END;
+    ELSE IF @i_businessValueName IS NOT NULL
+        AND EXISTS (
             SELECT 1
             FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
-            WHERE businessValueId = @i_businessValueId
+            WHERE LOWER(businessValueName) = LOWER(@i_businessValueName)
+              AND businessValueId <> @i_businessValueId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL BUSINESS VALUE NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO BUSINESS VALUE QUE ESTA REGISTRADO CON ESE NOMBRE';
+    END;
+    ELSE
+    BEGIN
+        BEGIN TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-        -- Verificar que el usuario modificador exista
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_businessValueModificatorId
-                AND userEnable = 1
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL USUARIO MODIFICADOR NO EXISTE';
-        END
+        BEGIN TRY
 
-        -- Evitar nombres duplicados
-        ELSE IF @i_businessValueName IS NOT NULL
-            AND EXISTS
-            (
-                SELECT 1
-                FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
-                WHERE businessValueName = @i_businessValueName
-                    AND businessValueId <> @i_businessValueId
-            )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL BUSINESS VALUE YA EXISTE';
-        END
+            UPDATE [SQM_CATALOGS].[TBL_BusinessValues]
+            SET businessValueName = COALESCE(@i_businessValueName, businessValueName),
+                businessValueModificationDate = @i_businessValueModificationDate,
+                businessValueModificatorId = @i_businessValueModificatorId,
+                businessValueEnable = COALESCE(@i_businessValueEnable, businessValueEnable)
+            WHERE businessValueId = @i_businessValueId;
 
-        ELSE
-        BEGIN
+            COMMIT TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-            BEGIN TRANSACTION TRX_UPD_BUSINESS_VALUE;
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'BUSINESS VALUE ACTUALIZADO CORRECTAMENTE';
 
-            BEGIN TRY
+        END TRY
+        BEGIN CATCH
 
-                UPDATE [SQM_CATALOGS].[TBL_BusinessValues]
-                SET
-                    businessValueName = COALESCE(@i_businessValueName,businessValueName),
-                    businessValueModificationDate = @i_businessValueModificationDate,
-                    businessValueModificatorId = @i_businessValueModificatorId,
-                    businessValueEnable = COALESCE(@i_businessValueEnable,businessValueEnable)
-                WHERE businessValueId = @i_businessValueId;
+            ROLLBACK TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-                COMMIT TRANSACTION TRX_UPD_BUSINESS_VALUE;
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR BUSINESS VALUE';
 
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'BUSINESS VALUE ACTUALIZADO CORRECTAMENTE';
+            SET @o_MensajeTecnico = CONCAT_WS(
+                ' - ',
+                'ERROR AL ACTUALIZAR BUSINESS VALUE',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-            END TRY
-
-            BEGIN CATCH
-
-                ROLLBACK TRANSACTION TRX_UPD_BUSINESS_VALUE;
-
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL BUSINESS VALUE';
-
-                SET @o_MensajeTecnico = CONCAT_WS(
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL BUSINESS VALUE',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
-
+        END CATCH
     END
+END

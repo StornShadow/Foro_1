@@ -149,85 +149,98 @@ BEGIN
 
     -- ACTUALIZAR COMENTARIO --
     ELSE IF @w_Accion = 'U'
+BEGIN
+
+    IF ISNULL(@i_taskCommentId,0) = 0
     BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL COMENTARIO ES OBLIGATORIO';
+    END
 
-        IF ISNULL(@i_taskCommentId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL COMENTARIO ES OBLIGATORIO';
-        END
+    ELSE IF ISNULL(@i_taskCommentModificatorId,0) = 0
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
+    END
 
-        ELSE IF ISNULL(@i_taskCommentModificatorId,0) = 0
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-        END
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_GENERAL].[TBL_TaskComments] (NOLOCK)
+        WHERE taskCommentId = @i_taskCommentId
+    )
+    BEGIN
+        SET @o_Numero = 404;
+        SET @o_MensajeUsuario = 'EL COMENTARIO NO EXISTE';
+    END
 
-        ELSE IF NOT EXISTS
+    ELSE IF NOT EXISTS
+    (
+        SELECT 1
+        FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
+        WHERE userId = @i_taskCommentModificatorId
+    )
+    BEGIN
+        SET @o_Numero = 400;
+        SET @o_MensajeUsuario = 'EL MODIFICADOR NO EXISTE';
+    END
+
+    ELSE IF @i_taskCommentText IS NOT NULL
+        AND EXISTS
         (
             SELECT 1
             FROM [SQM_GENERAL].[TBL_TaskComments] (NOLOCK)
-            WHERE taskCommentId = @i_taskCommentId
+            WHERE LOWER(taskCommentText) = LOWER(@i_taskCommentText)
+              AND taskCommentId <> @i_taskCommentId
         )
-        BEGIN
-            SET @o_Numero = 404;
-            SET @o_MensajeUsuario = 'EL COMENTARIO NO EXISTE';
-        END
+    BEGIN
+        SET @o_Numero = 409;
+        SET @o_MensajeUsuario = 'YA EXISTE OTRO COMENTARIO REGISTRADO CON ESE TEXTO';
+    END
 
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
-            WHERE userId = @i_taskCommentModificatorId
-        )
-        BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL MODIFICADOR NO EXISTE';
-        END
+    ELSE
+    BEGIN
 
-        ELSE
-        BEGIN
+        BEGIN TRANSACTION TRX_UPD_TASKCOMMENT;
 
-            BEGIN TRANSACTION TRX_UPD_TASKCOMMENT;
+        BEGIN TRY
 
-            BEGIN TRY
+            UPDATE [SQM_GENERAL].[TBL_TaskComments]
+            SET
+                taskCommentOwner = COALESCE(@i_taskCommentOwner, taskCommentOwner),
+                taskCommentText = COALESCE(@i_taskCommentText, taskCommentText),
+                taskCommentModificationDate = @i_taskCommentModificationDate,
+                taskCommentModificatorId = @i_taskCommentModificatorId,
+                taskCommentStatus = COALESCE(@i_taskCommentStatus, taskCommentStatus)
+            WHERE taskCommentId = @i_taskCommentId;
 
-                UPDATE [SQM_GENERAL].[TBL_TaskComments]
-                SET
-                    taskCommentOwner = COALESCE(@i_taskCommentOwner, taskCommentOwner),
-                    taskCommentText = COALESCE(@i_taskCommentText, taskCommentText),
-                    taskCommentModificationDate = @i_taskCommentModificationDate,
-                    taskCommentModificatorId = @i_taskCommentModificatorId,
-                    taskCommentStatus = COALESCE(@i_taskCommentStatus, taskCommentStatus)
-                WHERE taskCommentId = @i_taskCommentId;
+            COMMIT TRANSACTION TRX_UPD_TASKCOMMENT;
 
-                COMMIT TRANSACTION TRX_UPD_TASKCOMMENT;
+            SET @o_Numero = 200;
+            SET @o_MensajeUsuario = 'COMENTARIO ACTUALIZADO CORRECTAMENTE';
 
-                SET @o_Numero = 200;
-                SET @o_MensajeUsuario = 'COMENTARIO ACTUALIZADO CORRECTAMENTE';
+        END TRY
+        BEGIN CATCH
 
-            END TRY
+            ROLLBACK TRANSACTION TRX_UPD_TASKCOMMENT;
 
-            BEGIN CATCH
+            SET @o_Numero = 500;
+            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR COMENTARIO';
 
-                ROLLBACK TRANSACTION TRX_UPD_TASKCOMMENT;
+            SET @o_MensajeTecnico = CONCAT_WS
+            (
+                ' - ',
+                'ERROR AL ACTUALIZAR COMENTARIO',
+                ERROR_PROCEDURE(),
+                ERROR_LINE(),
+                ERROR_MESSAGE()
+            );
 
-                SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR COMENTARIO';
-                SET @o_MensajeTecnico = CONCAT_WS
-                (
-                    ' - ',
-                    'ERROR AL ACTUALIZAR COMENTARIO',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
-            END CATCH
-
-        END
+        END CATCH
 
     END
+
+END
 
     -- LISTAR COMENTARIOS --
     ELSE IF @w_Accion = 'S'

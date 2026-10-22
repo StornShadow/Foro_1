@@ -118,90 +118,51 @@ BEGIN
     --ACTUALIZAR ROL--
     ELSE IF @w_Accion = 'U'
     BEGIN
-
-        -- El ID es requerido para actualizar
-        IF ISNULL(@i_rolId,0) = 0
+        IF ISNULL(@i_rolId, 0) = 0
         BEGIN
             SET @o_Numero = 400;
             SET @o_MensajeUsuario = 'EL ID DEL ROL ES OBLIGATORIO';
-        END
-
-        -- El usuario modificador es requerido
-        ELSE IF ISNULL(@i_rolModificatorId,0) = 0
+        END;
+        ELSE IF ISNULL(@i_rolModificatorId, 0) = 0
         BEGIN
             SET @o_Numero = 400;
             SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-        END
-
-        -- Verificar existencia del rol
-        ELSE IF NOT EXISTS
-        (
-            SELECT 1
-            FROM [SQM_SECURITY].[TBL_Roles] (NOLOCK)
-            WHERE rolId = @i_rolId
-        )
+        END;
+        ELSE IF NOT EXISTS (SELECT 1 FROM [SQM_SECURITY].[TBL_Roles] (NOLOCK) WHERE rolId = @i_rolId)
         BEGIN
             SET @o_Numero = 404;
             SET @o_MensajeUsuario = 'EL ROL NO EXISTE';
-        END
-
-        -- Evitar nombres duplicados
-        ELSE IF @i_rolName IS NOT NULL
-            AND EXISTS
-            (
-                SELECT 1
-                FROM [SQM_SECURITY].[TBL_Roles] (NOLOCK)
-                WHERE rolName = @i_rolName
-                AND rolId <> @i_rolId
-            )
+        END;
+        ELSE IF @i_rolName IS NOT NULL AND EXISTS (SELECT 1 FROM [SQM_SECURITY].[TBL_Roles] (NOLOCK) WHERE LOWER(rolName) = LOWER(@i_rolName) AND rolId <> @i_rolId)
         BEGIN
-            SET @o_Numero = 400;
-            SET @o_MensajeUsuario = 'EL ROL YA EXISTE';
-        END
-
+            SET @o_Numero = 409;
+            SET @o_MensajeUsuario = 'YA EXISTE OTRO ROL REGISTRADO CON ESE NOMBRE';
+        END;
         ELSE
         BEGIN
-
             BEGIN TRANSACTION TRX_UPD_ROL;
-
             BEGIN TRY
-
                 UPDATE [SQM_SECURITY].[TBL_Roles]
-                SET
-                    rolName = COALESCE(@i_rolName,rolName),
+                SET rolName = COALESCE(@i_rolName, rolName),
                     rolModificationDate = @i_rolModificationDate,
                     rolModificatorId = @i_rolModificatorId,
-                    rolEnable = COALESCE(@i_rolEnable,rolEnable)
+                    rolEnable = COALESCE(@i_rolEnable, rolEnable)
                 WHERE rolId = @i_rolId;
 
                 COMMIT TRANSACTION TRX_UPD_ROL;
 
                 SET @o_Numero = 200;
                 SET @o_MensajeUsuario = 'ROL ACTUALIZADO CORRECTAMENTE';
-
             END TRY
-
             BEGIN CATCH
-
                 ROLLBACK TRANSACTION TRX_UPD_ROL;
-
                 SET @o_Numero = 500;
-                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL ROL';
-
-                SET @o_MensajeTecnico = CONCAT_WS
-                (
-                    ' - ',
-                    'ERROR AL ACTUALIZAR EL ROL',
-                    ERROR_PROCEDURE(),
-                    ERROR_LINE(),
-                    ERROR_MESSAGE()
-                );
-
+                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR ROL';
+                SET @o_MensajeTecnico = CONCAT_WS(' - ', 'ERROR AL ACTUALIZAR ROL', ERROR_PROCEDURE(), ERROR_LINE(), ERROR_MESSAGE());
             END CATCH
-
         END
-
     END
+
 
 
 
