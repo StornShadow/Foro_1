@@ -1,5 +1,4 @@
-CREATE OR ALTER PROC [SQM_CATALOGS].[USP_BusinessValues]
-(
+CREATE OR ALTER PROC [SQM_CATALOGS].[USP_BusinessValues](
     @i_businessValueId INT = NULL,
     @i_businessValueName VARCHAR(80) = NULL,
     @i_businessValueCreationDate DATETIME = NULL,
@@ -13,8 +12,7 @@ CREATE OR ALTER PROC [SQM_CATALOGS].[USP_BusinessValues]
     @o_Numero INT = NULL OUT,
     @o_MensajeTecnico VARCHAR(500) = NULL OUT,
     @o_MensajeUsuario VARCHAR(500) = NULL OUT
-)
-AS
+) AS
 BEGIN
 
     DECLARE @w_totalRows INT;
@@ -24,9 +22,6 @@ BEGIN
 
     IF @i_businessValueModificationDate IS NULL
         SET @i_businessValueModificationDate = GETDATE();
-
-
-
 
     --INSERTAR --
     IF @w_Accion = 'I'
@@ -47,8 +42,7 @@ BEGIN
         END
 
         -- Validar que el usuario creador exista
-        ELSE IF NOT EXISTS
-        (
+        ELSE IF NOT EXISTS (
             SELECT 1
             FROM [SQM_SECURITY].[TBL_Users] (NOLOCK)
             WHERE userId = @i_businessValueCreatorId
@@ -60,8 +54,7 @@ BEGIN
         END
 
         -- Evitar nombres duplicados
-        ELSE IF EXISTS
-        (
+        ELSE IF EXISTS (
             SELECT 1
             FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
             WHERE businessValueName = @i_businessValueName
@@ -78,8 +71,7 @@ BEGIN
 
             BEGIN TRY
 
-                INSERT INTO [SQM_CATALOGS].[TBL_BusinessValues]
-                (
+                INSERT INTO [SQM_CATALOGS].[TBL_BusinessValues] (
                     businessValueName,
                     businessValueCreationDate,
                     businessValueCreatorId,
@@ -87,8 +79,7 @@ BEGIN
                     businessValueModificatorId,
                     businessValueEnable
                 )
-                VALUES
-                (
+                VALUES (
                     @i_businessValueName,
                     @i_businessValueCreationDate,
                     @i_businessValueCreatorId,
@@ -125,75 +116,75 @@ BEGIN
 
     END
 
-
-
     --ACTUALIZAR BUSINESS VALUE--
     ELSE IF @w_Accion = 'U'
-BEGIN
-    IF ISNULL(@i_businessValueId, 0) = 0
     BEGIN
-        SET @o_Numero = 400;
-        SET @o_MensajeUsuario = 'EL ID DEL BUSINESS VALUE ES OBLIGATORIO';
-    END;
-    ELSE IF ISNULL(@i_businessValueModificatorId, 0) = 0
-    BEGIN
-        SET @o_Numero = 400;
-        SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
-    END;
-    ELSE IF NOT EXISTS (
-        SELECT 1
-        FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
-        WHERE businessValueId = @i_businessValueId
-    )
-    BEGIN
-        SET @o_Numero = 404;
-        SET @o_MensajeUsuario = 'EL BUSINESS VALUE NO EXISTE';
-    END;
-    ELSE IF @i_businessValueName IS NOT NULL
-        AND EXISTS (
+        IF ISNULL(@i_businessValueId, 0) = 0
+        BEGIN
+            SET @o_Numero = 400;
+            SET @o_MensajeUsuario = 'EL ID DEL BUSINESS VALUE ES OBLIGATORIO';
+        END
+        ELSE IF ISNULL(@i_businessValueModificatorId, 0) = 0
+        BEGIN
+            SET @o_Numero = 400;
+            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR ES OBLIGATORIO';
+        END
+        ELSE IF NOT EXISTS (
             SELECT 1
             FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
-            WHERE LOWER(businessValueName) = LOWER(@i_businessValueName)
-              AND businessValueId <> @i_businessValueId
+            WHERE businessValueId = @i_businessValueId
         )
-    BEGIN
-        SET @o_Numero = 409;
-        SET @o_MensajeUsuario = 'YA EXISTE OTRO BUSINESS VALUE QUE ESTA REGISTRADO CON ESE NOMBRE';
-    END;
-    ELSE
-    BEGIN
-        BEGIN TRANSACTION TRX_UPD_BUSINESS_VALUE;
+        BEGIN
+            SET @o_Numero = 404;
+            SET @o_MensajeUsuario = 'EL BUSINESS VALUE NO EXISTE';
+        END
+        ELSE IF @i_businessValueName IS NOT NULL
+            AND EXISTS (
+                SELECT 1
+                FROM [SQM_CATALOGS].[TBL_BusinessValues] (NOLOCK)
+                WHERE LOWER(businessValueName) = LOWER(@i_businessValueName)
+                  AND businessValueId <> @i_businessValueId
+            )
+        BEGIN
+            SET @o_Numero = 409;
+            SET @o_MensajeUsuario = 'YA EXISTE OTRO BUSINESS VALUE QUE ESTA REGISTRADO CON ESE NOMBRE';
+        END
+        ELSE
+        BEGIN
+            BEGIN TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-        BEGIN TRY
+            BEGIN TRY
 
-            UPDATE [SQM_CATALOGS].[TBL_BusinessValues]
-            SET businessValueName = COALESCE(@i_businessValueName, businessValueName),
-                businessValueModificationDate = @i_businessValueModificationDate,
-                businessValueModificatorId = @i_businessValueModificatorId,
-                businessValueEnable = COALESCE(@i_businessValueEnable, businessValueEnable)
-            WHERE businessValueId = @i_businessValueId;
+                UPDATE [SQM_CATALOGS].[TBL_BusinessValues]
+                SET businessValueName = COALESCE(@i_businessValueName, businessValueName),
+                    businessValueModificationDate = @i_businessValueModificationDate,
+                    businessValueModificatorId = @i_businessValueModificatorId,
+                    businessValueEnable = COALESCE(@i_businessValueEnable, businessValueEnable)
+                WHERE businessValueId = @i_businessValueId;
 
-            COMMIT TRANSACTION TRX_UPD_BUSINESS_VALUE;
+                COMMIT TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-            SET @o_Numero = 200;
-            SET @o_MensajeUsuario = 'BUSINESS VALUE ACTUALIZADO CORRECTAMENTE';
+                SET @o_Numero = 200;
+                SET @o_MensajeUsuario = 'BUSINESS VALUE ACTUALIZADO CORRECTAMENTE';
 
-        END TRY
-        BEGIN CATCH
+            END TRY
+            BEGIN CATCH
 
-            ROLLBACK TRANSACTION TRX_UPD_BUSINESS_VALUE;
+                ROLLBACK TRANSACTION TRX_UPD_BUSINESS_VALUE;
 
-            SET @o_Numero = 500;
-            SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR BUSINESS VALUE';
+                SET @o_Numero = 500;
+                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR BUSINESS VALUE';
 
-            SET @o_MensajeTecnico = CONCAT_WS(
-                ' - ',
-                'ERROR AL ACTUALIZAR BUSINESS VALUE',
-                ERROR_PROCEDURE(),
-                ERROR_LINE(),
-                ERROR_MESSAGE()
-            );
+                SET @o_MensajeTecnico = CONCAT_WS(
+                    ' - ',
+                    'ERROR AL ACTUALIZAR BUSINESS VALUE',
+                    ERROR_PROCEDURE(),
+                    ERROR_LINE(),
+                    ERROR_MESSAGE()
+                );
 
-        END CATCH
+            END CATCH
+        END
     END
-END
+END 
+GO

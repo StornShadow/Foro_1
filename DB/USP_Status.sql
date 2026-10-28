@@ -117,98 +117,65 @@ BEGIN
 
 
 
-    --  ACTUALIZAR ESTADO--
-   ELSE IF @w_Accion = 'U'
-BEGIN
- 
--- Validación: ID obligatorio
-IF ISNULL(@i_statusId,0) = 0
-BEGIN
-SET @o_Numero = 400;
-SET @o_MensajeUsuario = 'EL ID DEL ESTADO ES OBLIGATORIO';
-END
- 
--- Validación: Usuario modificador obligatorio
-ELSE IF ISNULL(@i_statusModificatorId,0) = 0
-BEGIN
-SET @o_Numero = 400;
-SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR DE ESTADO ES OBLIGATORIO';
-END
- 
--- Validación: Verificar existencia
-ELSE IF NOT EXISTS
-(
-SELECT 1
-FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-WHERE statusId = @i_statusId
-)
-BEGIN
-SET @o_Numero = 404;
-SET @o_MensajeUsuario = 'EL ESTADO NO EXISTE';
-END
- 
--- Validación: Evitar duplicados
-ELSE IF @i_statusName IS NOT NULL
-AND EXISTS
-(
-SELECT 1
-FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK)
-WHERE LOWER(statusName) = LOWER(@i_statusName)
-AND statusId <> @i_statusId
-)
-BEGIN
-SET @o_Numero = 409;
-SET @o_MensajeUsuario = 'YA EXISTE OTRO ESTADO REGISTRADO CON ESE NOMBRE';
-END
- 
-ELSE
-BEGIN
- 
-BEGIN TRANSACTION TRX_UPD_STATUS;
- 
-BEGIN TRY
- 
-UPDATE [SQM_CATALOGS].[TBL_Status]
-SET
-statusName = COALESCE(@i_statusName, statusName),
-statusModificationDate = @i_statusModificationDate,
-statusModificatorId = @i_statusModificatorId,
-statusEnable = COALESCE(@i_statusEnable, statusEnable)
-WHERE statusId = @i_statusId;
- 
-COMMIT TRANSACTION TRX_UPD_STATUS;
- 
-SET @o_Numero = 200;
-SET @o_MensajeUsuario = 'ESTADO ACTUALIZADO CORRECTAMENTE';
- 
-END TRY
- 
-BEGIN CATCH
- 
-ROLLBACK TRANSACTION TRX_UPD_STATUS;
- 
-SET @o_Numero = 500;
-SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL ESTADO';
- 
-SET @o_MensajeTecnico = CONCAT_WS
-(
-' - ',
-'ERROR AL ACTUALIZAR EL ESTADO',
-ERROR_PROCEDURE(),
-ERROR_LINE(),
-ERROR_MESSAGE()
-);
- 
-END CATCH
- 
-END
- 
-END
-Proporcione sus comentarios sobre BizChat
+ -- ACTUALIZAR ESTADO --
+    ELSE IF @w_Accion = 'U'
+    BEGIN
+        -- Validación: ID obligatorio
+        IF ISNULL(@i_statusId,0) = 0
+        BEGIN
+            SET @o_Numero = 400;
+            SET @o_MensajeUsuario = 'EL ID DEL ESTADO ES OBLIGATORIO';
+        END
+        -- Validación: Usuario modificador obligatorio
+        ELSE IF ISNULL(@i_statusModificatorId,0) = 0
+        BEGIN
+            SET @o_Numero = 400;
+            SET @o_MensajeUsuario = 'EL ID DEL MODIFICADOR DE ESTADO ES OBLIGATORIO';
+        END
+        -- Validación: Verificar existencia
+        ELSE IF NOT EXISTS (
+            SELECT 1 
+            FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK) 
+            WHERE statusId = @i_statusId
+        )
+        BEGIN
+            SET @o_Numero = 404;
+            SET @o_MensajeUsuario = 'EL ESTADO NO EXISTE';
+        END
+        -- Validación: Evitar duplicados
+        ELSE IF @i_statusName IS NOT NULL AND EXISTS (
+            SELECT 1 
+            FROM [SQM_CATALOGS].[TBL_Status] (NOLOCK) 
+            WHERE LOWER(statusName) = LOWER(@i_statusName) 
+              AND statusId <> @i_statusId
+        )
+        BEGIN
+            SET @o_Numero = 409;
+            SET @o_MensajeUsuario = 'YA EXISTE OTRO ESTADO REGISTRADO CON ESE NOMBRE';
+        END
+        ELSE
+        BEGIN
+            BEGIN TRANSACTION TRX_UPD_STATUS;
+            BEGIN TRY
+                UPDATE [SQM_CATALOGS].[TBL_Status] 
+                SET statusName = COALESCE(@i_statusName, statusName),
+                    statusModificationDate = @i_statusModificationDate,
+                    statusModificatorId = @i_statusModificatorId,
+                    statusEnable = COALESCE(@i_statusEnable, statusEnable) 
+                WHERE statusId = @i_statusId;
 
-
-
-
+                COMMIT TRANSACTION TRX_UPD_STATUS;
+                SET @o_Numero = 200;
+                SET @o_MensajeUsuario = 'ESTADO ACTUALIZADO CORRECTAMENTE';
+            END TRY
+            BEGIN CATCH
+                ROLLBACK TRANSACTION TRX_UPD_STATUS;
+                SET @o_Numero = 500;
+                SET @o_MensajeUsuario = 'ERROR AL ACTUALIZAR EL ESTADO';
+                SET @o_MensajeTecnico = CONCAT_WS(' - ', 'ERROR AL ACTUALIZAR EL ESTADO', ERROR_PROCEDURE(), ERROR_LINE(), ERROR_MESSAGE());
+            END CATCH
+        END
+    END
 
     --  LISTAR STATUS--    
 
